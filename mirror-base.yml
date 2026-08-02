@@ -1,0 +1,124 @@
+# Shared base for every spec in this repository (fish-shell).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# metadata, catalog, tests, versions, announce, annotations — stays in that
+# package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. Restate
+# `platforms:` IN FULL or not at all.
+
+skip_prereleases: true
+cascade: true
+
+# The fleet rule, and the toolchain agrees — `build_timestamp: none` under
+# `cascade: true` reds a WARN out of `package validate`:
+#
+#   build_timestamp: none with cascade publishing — re-pointing a cascade tag
+#   orphans the prior digest, which registry GC can reap and break @sha256:
+#   pins; set build_timestamp: date|datetime
+#
+# A cascade tag (`latest`, `X`, `X.Y`) re-points on every re-publish; without a
+# build segment the new manifest reuses the bare version tag and orphans the
+# prior digest. The `none` exception exists only for upstreams whose versions
+# already carry a `+YYYYMMDD` build segment, where `date` would empty the
+# mirror — fish versions as bare semver (4.8.1), so it does not apply. This
+# replaces the flat layout's `build_timestamp: none`, which predates the fleet
+# rule; nothing is published at the grouped coordinate yet, so the change costs
+# no orphaned digest.
+build_timestamp: date
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Assets are ~15 MB (linux tar.xz) to ~55 MB (the macOS .app zip).
+  max_downloads: 8
+  max_bundles: 4
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# `off`, and it cannot be otherwise here — `verify` was tried and reds at spec
+# load with exit 65:
+#
+#   bin_scan is enabled but metadata.json declares no interface-visible
+#   ${installPath}/<dir> PATH entry — the verification would inspect no file
+#   and pass green whatever the archive contains.
+#
+# The scan only looks BELOW an interface PATH entry of the form
+# ${installPath}/<dir>, and the check runs against the DEFAULT metadata. fish's
+# linux archive is a bare `fish` binary — the executable IS the content root,
+# so its PATH is a bare ${installPath} and there is nothing to scan. That the
+# darwin override *does* expose ${installPath}/bin does not rescue it: one
+# unscannable metadata file sinks the whole spec. `off` with a hand-listed
+# `binaries` in each metadata file is the blessed shape, and the split is what
+# records that darwin ships fish_indent + fish_key_reader while linux ships
+# neither.
+bin_scan: off
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. Upstream ships ONE Linux build per arch and both
+# are fully static. Measured on 4.8.1 (evidence above fish/mirror.yml's
+# `assets:`): amd64 is static-pie linked, arm64 statically linked, neither has
+# a PT_INTERP or a single DT_NEEDED. So both Linux keys are BARE. Tagging them
+# `+libc.musl` would be a false requirement that hid them from every glibc
+# host.
+#
+# A bare key claims universality, so it must prove it: ubuntu (glibc) + alpine
+# (musl) + fedora (different glibc vintage). The alpine leg IS the proof —
+# drop it and the universal claim is merely asserted.
+#
+# A future package here whose libc measurement differs must restate this whole
+# block in its own spec — see the shallow-merge warning at the top.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  darwin/amd64:
+    # GitHub's native macos-13 Intel pool is retired, so both darwin legs run
+    # on the arm64 macos-14 runner. The upstream asset is ONE universal
+    # (arm64 + x86_64) Mach-O, and `arch -x86_64` is what would select the
+    # x86_64 slice under Rosetta 2 — without it this leg exercises the arm64
+    # slice and proves nothing about Intel.
+    #
+    # ⚠️ Declared to the fleet standard, but ocx-mirror 0.5.0 emits `prefix`
+    # into NO generated workflow (verified: zero occurrences in
+    # .github/workflows/, and the renderer accepts an invented platform key
+    # just as silently, so `validate` passing is not evidence it is read).
+    # Until the renderer wires it up, this leg re-tests the arm64 slice. The
+    # bundle is still the right one and the x86_64 slice is well-formed per
+    # `file` — the gap is in what the test proves, not in what is published.
+    runner: macos-14
+    prefix: ["arch", "-x86_64"]
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
+  # No windows: upstream ships no Windows build of fish.
+  #
+  # No `containers:` on darwin — those runners have no Linux container engine,
+  # and the key is rejected at spec load.
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

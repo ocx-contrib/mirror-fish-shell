@@ -1,0 +1,137 @@
+extends: ../mirror-base.yml
+
+name: fish
+
+# Logical index package `fish-shell/fish` at the physical path
+# `ghcr.io/ocx-contrib/fish-shell/fish` — slash segments, never
+# hyphen-flattened. The first segment must be this repo's own GitHub owner:
+# GITHUB_TOKEN only authorises packages owned by the repo the workflow runs in.
+#
+# The namespace keeps upstream's org (`fish-shell`) because that org IS the
+# project's own brand, not a person's handle; the package segment is the
+# publish-name `fish`.
+#
+# Succeeds the flat `ocx.sh/fish` coordinate this repository published before
+# the grouped layout.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/fish-shell/fish
+
+source:
+  type: github_release
+  owner: fish-shell
+  repo: fish-shell
+  tag_pattern: "^(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# Upstream ships ONE Linux build per arch and both are fully static. Measured
+# on 4.8.1:
+#
+#   $ file fish            # from fish-4.8.1-linux-x86_64.tar.xz
+#   ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked,
+#   BuildID[sha1]=75ea83d0…, not stripped
+#   $ readelf -l … | grep INTERP  → (none)
+#   $ readelf -d … | grep NEEDED  → (none)
+#
+#   $ file fish            # from fish-4.8.1-linux-aarch64.tar.xz
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked,
+#   BuildID[sha1]=93d1ab2b…, not stripped
+#   $ readelf -l … | grep INTERP  → (none)
+#   $ readelf -d … | grep NEEDED  → (none)
+#
+# No PT_INTERP and no DT_NEEDED means the artifact requires nothing of the
+# host, so both Linux keys are BARE — no `+libc.*` suffix. Upstream publishes
+# no musl/glibc split to choose between. Container legs (ubuntu + alpine +
+# fedora) live in ../mirror-base.yml and are what turn that claim into
+# evidence.
+#
+# ─── Scope (verified across every in-range release: 4.7.0, 4.7.1, 4.8.0, 4.8.1)
+#
+# Upstream also publishes, and this mirror deliberately does not carry:
+#   fish-<v>.pkg           — a macOS installer, not a relocatable payload
+#   fish-<v>.tar.xz        — the SOURCE tarball (note: no `-linux-` segment)
+#   fish-<v>.tar.xz.asc    — detached signature
+#
+# The anchored ^…$ regexes are what keep those out — the source tarball
+# `fish-4.8.1.tar.xz` carries no `-linux-<arch>` segment, so neither Linux
+# pattern matches it, and `^fish-.*\.app\.zip$` cannot match `.pkg` or
+# `.tar.xz`. Resolution verified BOTH ways across every in-range release: each
+# of the three patterns matches EXACTLY one asset. A pattern matching zero is
+# silently skipped, not an error — it would yield a green run with a missing
+# platform.
+assets:
+  linux/amd64:
+    - "^fish-.*-linux-x86_64\\.tar\\.xz$"
+  linux/arm64:
+    - "^fish-.*-linux-aarch64\\.tar\\.xz$"
+  # macOS ships ONE universal (arm64 + x86_64) binary inside `fish-<v>.app.zip`,
+  # so the same asset serves both darwin arches — verified with `file`:
+  # "Mach-O universal binary with 2 architectures: [arm64] [x86_64]".
+  darwin/amd64:
+    - "^fish-.*\\.app\\.zip$"
+  darwin/arm64:
+    - "^fish-.*\\.app\\.zip$"
+
+asset_type:
+  type: archive
+  # linux *.tar.xz is a single bare `fish` binary at the root (no wrapper dir) → strip 0.
+  # darwin fish-<v>.app.zip nests the real install tree at
+  #   fish-<v>.app/Contents/Resources/base/usr/local/{bin,share,etc}
+  # (this is exactly what the .app's install.sh `ditto`s into /usr/local).
+  # strip 6 drops `fish-<v>.app/Contents/Resources/base/usr/local/`, leaving a
+  # clean /usr/local payload (bin/ + share/ + etc/) at the bundle root. The
+  # shallower GUI launcher (Contents/MacOS/fish, 3 components) and code-signature
+  # files fall *below* the strip depth and are dropped — so only the real CLI
+  # `bin/fish` lands on PATH (no E2BIG launcher recursion). PATH → ${installPath}/bin
+  # via metadata-darwin.json. The macOS binary embeds its data dir like the linux
+  # one, and share/fish ships at ../share/fish relative to bin as a belt-and-braces.
+  strip_components:
+    default: 0
+    platforms:
+      darwin/amd64: 6
+      darwin/arm64: 6
+
+metadata:
+  # The two archive shapes disagree on where the executables land, so the
+  # bundle interface stays split rather than being forced to one value:
+  #   linux  — a bare `fish` at the content root      → PATH = ${installPath}
+  #   darwin — the .app's bin/ lifted to the root, and
+  #            it additionally carries fish_indent and
+  #            fish_key_reader (linux ships neither)  → PATH = ${installPath}/bin
+  default: metadata.json
+  platforms:
+    darwin/amd64: metadata-darwin.json
+    darwin/arm64: metadata-darwin.json
+
+catalog:
+  # Only a raster mark ships here: the fish logo is an upstream trademark used
+  # for catalog identification, and there is no authored SVG of it to ship.
+  logo: logo.png
+
+versions:
+  min: "4.7.0"
+  new_per_run: 5
+  poll_interval: "0 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: fish/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate. GitHub's licence API answers
+  # `NOASSERTION` (the tree also vendors PSF-, MIT- and LGPL-licensed code), so
+  # the id is read off upstream's own text instead — doc_src/license.rst:
+  # "``fish`` is released under the GNU General Public License, version 2."
+  # There is no "or (at your option) any later version" clause anywhere, so the
+  # id is GPL-2.0-**only**, and NOTICE.md carries the §3(b) Corresponding
+  # Source offer the licence gate requires of a GPL redistribution.
+  org.opencontainers.image.licenses: "GPL-2.0-only"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: fish-shell/fish
+  fork: ocx-contrib/index

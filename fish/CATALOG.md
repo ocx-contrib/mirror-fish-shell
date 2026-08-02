@@ -12,6 +12,8 @@ fish is a smart and user-friendly command line shell for Linux, macOS, and the r
 
 - **fish** — the fish command line shell (interactive prompt and `fish -c "..."` script runner)
 
+On macOS the upstream archive additionally ships **fish_indent** (the script formatter) and **fish_key_reader** (the terminal key-sequence inspector); the Linux archive carries the `fish` binary alone.
+
 ## Links
 
 - [fish Documentation](https://fishshell.com/docs/current/)
@@ -20,7 +22,7 @@ fish is a smart and user-friendly command line shell for Linux, macOS, and the r
 
 ## License & source
 
-The fish binaries redistributed here are licensed **GPL-2.0** (© Axel
+The fish binaries redistributed here are licensed **GPL-2.0-only** (© Axel
 Liljencrantz and the fish-shell contributors). The complete Corresponding Source
 for each mirrored version is available from the upstream tagged tree — e.g.
 version `X.Y.Z` at <https://github.com/fish-shell/fish-shell/releases/tag/X.Y.Z>,

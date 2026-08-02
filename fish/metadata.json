@@ -1,12 +1,13 @@
 {
   "type": "bundle",
   "version": 1,
+  "binaries": ["fish"],
   "env": [
     {
       "key": "PATH",
       "type": "path",
       "required": true,
-      "value": "${installPath}/bin",
+      "value": "${installPath}",
       "visibility": "public"
     }
   ]
