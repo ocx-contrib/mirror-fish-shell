@@ -96,7 +96,7 @@ platforms:
       - { image: "fedora:40",    shell: bash }
   darwin/amd64:
     # GitHub's native macos-13 Intel pool is retired, so both darwin legs run
-    # on the arm64 macos-14 runner. The upstream asset is ONE universal
+    # on the arm64 macos-15 runner. The upstream asset is ONE universal
     # (arm64 + x86_64) Mach-O, and `arch -x86_64` is what would select the
     # x86_64 slice under Rosetta 2 — without it this leg exercises the arm64
     # slice and proves nothing about Intel.
@@ -108,10 +108,10 @@ platforms:
     # Until the renderer wires it up, this leg re-tests the arm64 slice. The
     # bundle is still the right one and the x86_64 slice is well-formed per
     # `file` — the gap is in what the test proves, not in what is published.
-    runner: macos-14
+    runner: macos-15
     prefix: ["arch", "-x86_64"]
   darwin/arm64:
-    runner: macos-14
+    runner: macos-15
     shell: bash
   # No windows: upstream ships no Windows build of fish.
   #
